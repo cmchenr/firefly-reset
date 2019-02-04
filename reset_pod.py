@@ -11,31 +11,33 @@ TETRATION_CREDS = './PATH/TO/api_credentials.json'
 
 parser = argparse.ArgumentParser(description='Tetration API Demo Script')
 parser.add_argument('-t','--tenant',help='Tenant Name', required=True)
+parser.add_argument('-f','--full',help='Full clean-up for admin class.  Includes deletion of scopes, roles and workspaces.')
 args = vars(parser.parse_args())
 
 restclient = RestClient(TETRATION_URL,
                 credentials_file=TETRATION_CREDS,
                 verify=False)
 
-def reset_pod(restclient, vrf_id, app_scope_id, vrf_name):
+def reset_pod(restclient, vrf_id, app_scope_id, vrf_name,full_cleanup):
     errors = []
 
     # -------------------------------------------------------------------------
     # DELETE ROLES
 
-    resp = restclient.get('/openapi/v1/roles')
-    if resp.status_code == 200:
-        resp_data = resp.json()
-    else:
-        print "[ERROR] reading list of roles."
-        errors.append("[ERROR] reading list of roles.")
-        print resp, resp.text
-        resp_data = {}
-    for role in resp_data:
-        if role["app_scope_id"] == app_scope_id:
-            roleId = role["id"]
-            delete_error = delete_with_retries(restclient,'/openapi/v1/roles/','Role',roleId,object_name=role["name"])
-            errors = errors+delete_error
+    if full_cleanup == True:
+        resp = restclient.get('/openapi/v1/roles')
+        if resp.status_code == 200:
+            resp_data = resp.json()
+        else:
+            print "[ERROR] reading list of roles."
+            errors.append("[ERROR] reading list of roles.")
+            print resp, resp.text
+            resp_data = {}
+        for role in resp_data:
+            if role["app_scope_id"] == app_scope_id:
+                roleId = role["id"]
+                delete_error = delete_with_retries(restclient,'/openapi/v1/roles/','Role',roleId,object_name=role["name"])
+                errors = errors+delete_error
 
     # -------------------------------------------------------------------------
     # DETERMINE SCOPES TO BE DELETED
@@ -70,7 +72,7 @@ def reset_pod(restclient, vrf_id, app_scope_id, vrf_name):
     # Walk through all applications and remove any in a scope that should be
     # deleted. In order to delete an application, we have to turn off enforcing
     # and make it secondary first.
-    
+
     print "[CHECKING] all application workspaces in Tetration."
     resp = restclient.get('/openapi/v1/applications/')
     if resp.status_code == 200:
@@ -154,11 +156,11 @@ def reset_pod(restclient, vrf_id, app_scope_id, vrf_name):
 
     # -------------------------------------------------------------------------
     # DELETE THE SCOPES
-
-    while len(toBeDeleted):
-        scopeId = toBeDeleted.pop()
-        delete_error = delete_with_retries(restclient,'/openapi/v1/app_scopes/','Scope',scopeId)
-        errors = errors+delete_error
+    if full_cleanup == True:
+        while len(toBeDeleted):
+            scopeId = toBeDeleted.pop()
+            delete_error = delete_with_retries(restclient,'/openapi/v1/app_scopes/','Scope',scopeId)
+            errors = errors+delete_error
 
     return {'success':1,'errors':errors}
 
@@ -193,4 +195,8 @@ def get_root_scope(vrf_name):
     return None
 
 scope = get_root_scope(args['tenant'])
-reset_pod(restclient=restclient,vrf_id=scope['vrf_id'],app_scope_id=scope['root_scope_id'],vrf_name=args['tenant'])
+if 'full' in args:
+    full_cleanup = True
+else:
+    full_cleanup = False
+reset_pod(restclient=restclient,vrf_id=scope['vrf_id'],app_scope_id=scope['root_scope_id'],vrf_name=args['tenant'],full_cleanup=full_cleanup)
